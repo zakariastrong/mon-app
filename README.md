@@ -61,3 +61,31 @@ docker run --rm -p 8000:8000 -e BUG_RATE=0.3 monapp:1.0.0
 Les logs d'accès d'uvicorn sont activés : chaque requête apparaît
 (`"GET /items HTTP/1.1" 200`), ce qui permet de compter les appels reçus par
 un conteneur avec `docker logs <conteneur> | grep -c "GET /items"`.
+
+## Intégration continue
+
+Le fichier `.github/workflows/ci.yml` définit deux jobs GitHub Actions.
+
+### Job `tests` : à chaque pull request vers `main` et à chaque tag `v*`
+
+1. Installe Python 3.12 et les dépendances.
+2. Lance `python -m pytest` : si un test échoue, la PR est bloquée.
+3. Lance **Bandit** (`bandit -r app/ -ll`), un outil de SAST (analyse statique de
+   sécurité du code) : il échoue s'il trouve un problème de gravité moyenne ou haute.
+
+### Job `image` : seulement sur un tag `v*`, et seulement si `tests` a réussi
+
+1. Calcule la version depuis le tag : `v1.0.0` → `1.0.0`.
+2. Se connecte à `ghcr.io` avec le `GITHUB_TOKEN` fourni automatiquement par GitHub.
+3. Construit l'image avec `--build-arg VERSION=<version>`.
+4. Scanne l'image avec **Trivy** *avant* de la publier : s'il trouve une faille
+   HIGH ou CRITICAL qui a déjà un correctif, le job échoue et l'image n'est pas poussée.
+5. Pousse `ghcr.io/<owner en minuscules>/monapp:<version>`. Jamais de tag `latest` :
+   une version publiée est immuable et on sait toujours ce qui tourne.
+
+### Publier une nouvelle version
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
